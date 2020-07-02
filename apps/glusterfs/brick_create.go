@@ -57,6 +57,7 @@ func (bmap brickHostMap) create(executor executors.Executor) error {
 			defer sg.Done()
 			logger.Info("Creating brick %v", b.Info.Id)
 			_, err := executor.BrickCreate(host, b.createReq())
+			logger.Info("heketi-brick+++++++++++++++++++++++++++++++++++++++++++: %v", b.createReq())
 			sg.Err(err)
 		}(brick, host)
 	}

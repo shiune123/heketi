@@ -173,6 +173,7 @@ func (b *BrickEntry) brickRequest(path string, create bool) *executors.BrickRequ
 	req.PoolMetadataSize = b.PoolMetadataSize
 	req.TpName = b.TpName()
 	req.LvName = b.LvName()
+	logger.Info("brickRequest,PoolMetadataSize:%v,req:%v", b.PoolMetadataSize, req)
 	// path varies depending on what it is called from
 	req.Path = path
 	// figure out how to format brick via subtype
@@ -226,6 +227,7 @@ func (b *BrickEntry) Create(db wdb.RODB, executor executors.Executor) error {
 	// Create brick on node
 	logger.Info("Creating brick %v", b.Info.Id)
 	_, err = executor.BrickCreate(host, req)
+	logger.Info("create ++++++++++++++++++++++++++++++++++ host:%v,req:%v", host, req)
 	if err != nil {
 		return err
 	}
