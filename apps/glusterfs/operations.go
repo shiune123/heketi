@@ -171,7 +171,7 @@ func bricksFromOp(db wdb.RODB,
 				// needed for the request
 				brick.gidRequested = gid
 				brick_entries = append(brick_entries, brick)
-				for i := 0; i <= len(brick_entries); i++ {
+				for i := 0; i < len(brick_entries); i++ {
 					logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick_entries%v:%v", i, brick_entries[i])
 					logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++PoolMetadataSize:%v", brick_entries[i].PoolMetadataSize)
 				}
