@@ -160,6 +160,8 @@ func bricksFromOp(db wdb.RODB,
 		for _, a := range op.Actions {
 			if a.Change == OpAddBrick || a.Change == OpDeleteBrick {
 				brick, err := NewBrickEntryFromId(tx, a.Id)
+				logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick:%v", brick.PoolMetadataSize)
+				logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick:%v", brick)
 				if err != nil {
 					logger.LogError("failed to find brick with id: %v", a.Id)
 					return err
@@ -169,7 +171,11 @@ func bricksFromOp(db wdb.RODB,
 				// needed for the request
 				brick.gidRequested = gid
 				brick_entries = append(brick_entries, brick)
-				logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick_entries:%v", brick_entries)
+				for i := 0; i <= len(brick_entries); i++ {
+					logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick_entries%v:%v", i, brick_entries[i])
+					logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++PoolMetadataSize:%v", brick_entries[i].PoolMetadataSize)
+				}
+
 			}
 		}
 		return nil

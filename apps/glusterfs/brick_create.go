@@ -41,6 +41,7 @@ func newBrickHostMap(
 		if err != nil {
 			return nil, err
 		}
+		logger.Info("newBrickHostMap++++++++++++++++++++++++++++++++++++++++++++++bmap:%v", bmap[brick])
 	}
 	return bmap, nil
 }
