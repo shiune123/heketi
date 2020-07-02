@@ -117,6 +117,7 @@ func (bmap brickHostMap) destroy(
 // CreateBricks is a deprecated wrapper for creating multiple bricks.
 func CreateBricks(db wdb.RODB, executor executors.Executor, brick_entries []*BrickEntry) error {
 	bmap, err := newBrickHostMap(db, brick_entries)
+	logger.Info("bmap+++++++++++++++++++++++++++++++++++++++++++++++++:%v", bmap)
 	if err != nil {
 		return err
 	}

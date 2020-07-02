@@ -109,6 +109,7 @@ func (vc *VolumeCreateOperation) Build() error {
 // Exec creates new bricks and volume on the underlying glusterfs storage system.
 func (vc *VolumeCreateOperation) Exec(executor executors.Executor) error {
 	brick_entries, err := bricksFromOp(vc.db, vc.op, vc.vol.Info.Gid)
+	logger.Info("Exec+++++++++++++++++++++++++++++++++++++brick_entries:%v", brick_entries)
 	if err != nil {
 		logger.LogError("Failed to get bricks from op: %v", err)
 		return err

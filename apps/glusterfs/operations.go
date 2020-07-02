@@ -169,6 +169,7 @@ func bricksFromOp(db wdb.RODB,
 				// needed for the request
 				brick.gidRequested = gid
 				brick_entries = append(brick_entries, brick)
+				logger.Info("bricksFromOp+++++++++++++++++++++++++++++++++++++++++++brick_entries:%v", brick_entries)
 			}
 		}
 		return nil
