@@ -173,7 +173,8 @@ func (b *BrickEntry) brickRequest(path string, create bool) *executors.BrickRequ
 	req.PoolMetadataSize = b.PoolMetadataSize
 	req.TpName = b.TpName()
 	req.LvName = b.LvName()
-	logger.Info("brickRequest,PoolMetadataSize:%v,req:%v", b.PoolMetadataSize, req)
+	logger.Info("brickRequest+++++++++++++++++++++++++++++++++++++++PoolMetadataSize:%v", b.PoolMetadataSize)
+	logger.Info("brickRequest+++++++++++++++++++++++++++++++++++++++req:%v", req)
 	// path varies depending on what it is called from
 	req.Path = path
 	// figure out how to format brick via subtype
