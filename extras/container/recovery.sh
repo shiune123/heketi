@@ -1,5 +1,7 @@
 #!/bin/bash
 
+
+
 #获取当前glusterfs应用所在的命名空间
 NAMESPACES=`/host/bin/kubectl get po --all-namespaces |grep glusterfs |grep -v heketi | grep -v NAME | awk '{print $1}' |sed -n 1p`
 TOKEN=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_TOKEN}`
@@ -8,11 +10,26 @@ MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].da
 
 #检查当前环境是否为故障节点恢复环境
 check() {
-    checkGFSConfigLost
+    errorNode=`checkGFSConfigLost`
     checkVGLost
     checkLVLost
     checkBrickLost
     checkMountLost
+}
+
+getMatrixNodeId() {
+    if [[ $IN_VIP =~ ":" ]]; then
+        IN_VIP="\[$IN_VIP\]"
+    fi
+    nodesInfo=`curl -k -H "X-Auth-Token:${TOKEN}" https://${IN_VIP}:${MATRIX_SECURE_PORT}/matrix/rsapi/v1.0/cluster/nodes`
+    nodesNum=`echo ${nodesInfo}|jq length`
+    for ((i=0;i<${nodesNum};i++)); do
+        nodeName=`echo ${nodesInfo} | jq -r .[$i].nodeBaseInfo.nodeName`
+        if [ "$nodeName" = "$1" ]; then
+            echo ${nodesInfo} | jq -r .[$i].nodeId
+            break
+        fi
+    done
 }
 
 #获取错误节点的nodeID
@@ -238,11 +255,19 @@ checkPodStatus() {
     done
 }
 
-
-
-
 checkGFSConfigLost() {
-    
+    nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |awk '{print $7}' |tr '\n' ' '`
+    nodeNameArray=($nodeNames)
+    errorNodeName=""
+    cmd="ls /var/lib/heketi |grep -w mounts"
+    for nodeName in ${nodeNameArray[@]}; do
+        nodeId=`getMatrixNodeId $nodeName`
+        exitCode=`matrixExec $nodeId $cmd`
+        if [ $exitCode -ne 0 ]; then
+            errorNodeName=$nodeName $errorNodeName
+        fi
+    done
+    echo $errorNodeName
 }
 
 checkVGLost() {
@@ -262,25 +287,15 @@ checkMountLost() {
 }
 
 matrixExec() {
-    exitCode=`curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"$3\",\"command\":\"vgremove -yf $4\"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd|jq .exitCode`
-    sum=0
-    while [ ${sum} -lt 300 ]; do
-        if [[ $exitCode -ne 0 ]]; then
-            sleep 60
-            exitCode=`curl -X POST -k -H "X-Auth-Token:$1" -H "Content-Type:application/json" -d "{\"nodeId\":\"$3\",\"command\":\"vgremove -yf $4\"}" https://$2:${port}/matrix/rsapi/v1.0/exec_cmd|jq .exitCode`
-        else 
-            break
-        fi
-        ((sum+=1))
-        if [ ${sum} -ge 300 ]; then
-            echo "Time out to get the result vgremove"
-            exit 1
-        fi
-    done
+    if [[ $IN_VIP =~ ":" ]]; then
+            IN_VIP="\[$IN_VIP\]"
+    fi
+    exitCode=`curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"$1\",\"command\":\"$2\"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd|jq .exitCode`
+    echo $exitCode
 }
 
 main() {
-    while true; do 
+    while true; do
         check
     done
 }
