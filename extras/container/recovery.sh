@@ -12,9 +12,55 @@ check() {
     #需要修复Gluster集群及brick目录和mount动作
     errorNodes=`checkGFSConfigLost $nodeNames`
     errorVGs=`checkVGLost $nodeNames`
-    
     errorLVs=`checkLVLost $nodeNames`
     errorBricks=`checkBrickLost $nodeNames`
+    errorNodesarray=($errorNodes)
+    errorVGsarray=($errorVGs)
+    errorLVsarray=($errorLVs)
+    errorBricksarray=($errorBricks)
+
+    for errorVG in ${errorVGs[@]}; do
+        #恢复磁盘配置
+        recoveryVG $errorNode
+        recoveryBrickFile $errorNode
+        recoveryLV $errorNode
+        recoveryMount $errorNode
+        recoveryStorage $errorNode
+    done
+
+    for errorNode in ${errorNodesarray[@]}; do
+        #恢复GlusterFS配置
+        checkGFSConfig $errorNode
+        recoveryGFSCluster $errorNode
+        recoveryBrickFile $errorNode
+        recoveryMount $errorNode
+        recoveryStorage $errorNode
+    done
+
+    for errorLV in ${errorLVsarray[@]}; do
+        #恢复LV
+        recoveryBrickFile $errorNode
+        recoveryLV $errorNode
+        recoveryMount $errorNode
+        recoveryStorage $errorNode
+    done
+
+    for errorBrick in ${errorBricksarray[@]}; do
+        #恢复目录
+        recoveryBrickFile $errorNode
+        recoveryMount $errorNode
+        recoveryStorage $errorNode
+    done
+
+
+    #全部恢复
+    checkGFSConfig $errorNode
+    recoveryGFSCluster $errorNode
+    recoveryVG $errorNode
+    recoveryBrickFile $errorNode
+    recoveryLV $errorNode
+    recoveryMount $errorNode
+    recoveryStorage $errorNode    
 }
 
 getMatrixNodeId() {
@@ -33,14 +79,15 @@ getMatrixNodeId() {
 }
 
 #获取错误节点的nodeID
-#param：nodeIP string
+#param：nodeIName string
 #return：nodeID string
 getErrorNodeId() {
+    nodeIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $6}'`
     nodeIds=`heketi-cli node list  --user admin --secret admin  |awk '{print $1}' |tr '\n' ' '`
     nodeId=""
     for nodeId in ${nodeIds[@]}; do
         nodeId=`echo ${nodeId:3}`
-        test=`heketi-cli node info $nodeId --user admin --secret admin |grep $1`
+        test=`heketi-cli node info $nodeId --user admin --secret admin |grep $nodeIp`
         if [ -n "$test" ]; then
             break
         fi
@@ -79,18 +126,23 @@ getErrorBrickId() {
 }
 
 #恢复GlusterFS集群
-#param：errorNodePodName string, allGlusterFSPodIP string to array, normalNodePodName string
+#param：errorNodeName string
 #return：null
 recoveryGFSCluster() {
-    newIp=`/host/bin/kubectl get po $1 -n ${NAMESPACES} -owide |grep -v 'IP' |awk '{print $6}'`
-    newUUID=`/host/bin/kubectl exec -i $1  -n ${NAMESPACES} -- cat /var/lib/glusterd/glusterd.info |grep UUID |tr "UUID=" " " |sed 's/^[ \t]*//g'`
-    oldUUID=`/host/bin/kubectl exec -i $3  -n ${NAMESPACES} -- gluster pool list |grep $newIp |awk '{print $1}'`
-    /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- sed -i 's/'$newUUID'/'$oldUUID'/g' /var/lib/glusterd/glusterd.info
-    /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- systemctl restart glusterd
-    ips=($2)
+    newIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $6}'`
+    newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $1}'`
+    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep -v 'IP' |grep glusterfs |grep 1/1 |grep -v $newPod |awk '{print $1}' |tr '\n' ' '`
+    allIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'NAME' |grep glusterfs |grep -v heketi |awk '{print $6}' |tr '\n' ' '`
+    gfsPodsArray=($gfsPods)
+    execPod=`echo ${nodeips} |awk '{print $1}'`
+    newUUID=`/host/bin/kubectl exec -i $newPod  -n ${NAMESPACES} -- cat /var/lib/glusterd/glusterd.info |grep UUID |tr "UUID=" " " |sed 's/^[ \t]*//g'`
+    oldUUID=`/host/bin/kubectl exec -i $execPod -n ${NAMESPACES} -- gluster pool list |grep $newIp |awk '{print $1}'`
+    /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- sed -i 's/'$newUUID'/'$oldUUID'/g' /var/lib/glusterd/glusterd.info
+    /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- systemctl restart glusterd
+    ips=($allIp)
     for ip in ${ips[@]};
     do
-        /host/bin/kubectl exec -i $1  -n ${NAMESPACES} -- gluster peer probe $ip
+        /host/bin/kubectl exec -i $newPod  -n ${NAMESPACES} -- gluster peer probe $ip
     done
     for ip in ${ips[@]};
     do
@@ -100,58 +152,67 @@ recoveryGFSCluster() {
 }
 
 #恢复用户自定义配置
-#param：errorNodePodName string, normalNodePodName string
+#param：errorNodePodName string
 #return：null
 checkGFSConfig() {
     #修改新建节点的glusterFS的ip配置，默认配置为ipv4
-    nodeips=`/host/bin/kubectl get po  -n ${NAMESPACES} -owide|grep glusterfs|awk '{print $6}' |tr '\n' ' '`
+    nodeips=`/host/bin/kubectl get po  -n ${NAMESPACES} -owide |grep glusterfs |grep -v heketi |awk '{print $6}' |tr '\n' ' '`
+    newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'NAME' |grep glusterfs |grep -w $1 |awk '{print $1}'`
+    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep -v 'NAME' |grep glusterfs |grep 1/1 |grep -v $newPod |awk '{print $1}' |tr '\n' ' '`
     ip=`echo ${nodeips} |awk '{print $1}'`
     if [[ $ip =~ "." ]]; then
-        /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- sed -i 's/    option transport.address-family inet6/#   option transport.address-family inet6/g' /etc/glusterfs/glusterd.vol
-        /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- systemctl restart glusterd
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- sed -i 's/    option transport.address-family inet6/#   option transport.address-family inet6/g' /etc/glusterfs/glusterd.vol
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- systemctl restart glusterd
     elif [[ $ip =~ ":" ]]; then
-        /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- sed -i 's/#   option transport.address-family inet6/    option transport.address-family inet6/g' /etc/glusterfs/glusterd.vol
-        /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- systemctl restart glusterd
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- sed -i 's/#   option transport.address-family inet6/    option transport.address-family inet6/g' /etc/glusterfs/glusterd.vol
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- systemctl restart glusterd
     fi
     #修改定制占用端口数的配置
-    port=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- cat /etc/glusterfs/glusterd.vol |grep "option max-port" | tr -cd "[0-9]"`
+    execPod=`echo $gfsPods |awk '{print $1}'`
+    port=`/host/bin/kubectl exec -i $execPod -n ${NAMESPACES} -- cat /etc/glusterfs/glusterd.vol |grep "option max-port" | tr -cd "[0-9]"`
     if [ "$port" != "49352" ]; then
-        /host/bin/kubectl exec -i $1 -n ${NAMESPACES} -- sed -i 's/    option max-port  49352/    option max-port  $port/g' /etc/glusterfs/glusterd.vol
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- sed -i 's/    option max-port  49352/    option max-port  $port/g' /etc/glusterfs/glusterd.vol
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- systemctl restart glusterd
     fi
 }
 
 #恢复Device的VG
-#param：deviceIds string, errorNodePodName string
+#param：errorNodePodName string
 #return：null
 recoveryVG() {
-    deviceArray=($1)
+    gfsnodeId=`getErrorNodeId $1`
+    devIds=`getErrorDeviceId $gfsnodeId`
+    deviceArray=($devs)
+    newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $1}'`
+    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep -v 'IP' |grep glusterfs |grep 1/1 |grep -v $newPod |awk '{print $1}' |tr '\n' ' '`
     for dev in ${deviceArray[@]}
         devs=`heketi-cli device info $dev --user admin --secret admin |grep "Create Path:"`
         #获取盘符名称
         devName=`echo ${devs:13}`
         #获取vg名称
-        brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Bricks[0] |sed 's#\"##g'`
+        brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$dev"'.Bricks[0] |sed 's#\"##g'`
         vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.Info.path |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
-        pvUUID=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Info.pv_uuid |sed 's#\"##g'`
+        pvUUID=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$dev"'.Info.pv_uuid |sed 's#\"##g'`
         #删除软连接，防止vg创建失败
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- ls /dev |grep $vgName
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- ls /dev |grep $vgName
         if [ $? -eq 0 ]; then
-            /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- rm -rf /dev/$vgName
+            /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- rm -rf /dev/$vgName
         fi
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- pvs |grep $devName
-        if [ $? -eq 0 ]; then
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- pvs |grep $devName
+        if [ $? -ne 0 ]; then
              #创建pv
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K '$devName' --uuid '$pvUUID' --norestorefile
+            /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K '$devName' --uuid '$pvUUID' --norestorefile
         fi
         #创建vg
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm vgcreate -qq --physicalextentsize=4M --autobackup=n  '$vgName' '$devName'
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/bin/udevadm info --query=symlink --name=$devName
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/sbin/lvm vgcreate -qq --physicalextentsize=4M --autobackup=n  '$vgName' '$devName'
+        /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/bin/udevadm info --query=symlink --name=$devName
     done
 }
 
 #恢复VG的LV
 recoveryLV() {
-     #获取brickId，创建brick文件夹
+    #获取brickId，创建brick文件夹
+    
     num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Bricks |/host/bin/jq length`
     for ((i=0;i<${num};i++)); do
         brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Bricks[$i] |sed 's#\"##g'`
@@ -196,11 +257,14 @@ recoveryMount() {
 #param：errorNodePodName string
 #return：null
 recoveryStorage() {
-    volumes=`kubectl exec -i $1 -n ${NAMESPACES} -- gluster volume list |tr "\n" " "`
+    newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'NAME' |grep glusterfs |grep -w $1 |awk '{print $1}'`
+    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep -v 'IP' |grep glusterfs |grep 1/1 |grep -v $newPod |awk '{print $1}' |tr '\n' ' '`
+    nomalPod=`echo $gfsPods |awk '{print $1}'`
+    volumes=`kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume list |tr "\n" " "`
     arrayVolume=($volumes)
     for volume in ${arrayVolume[@]}; do
-        kubectl exec -i $1 -n ${NAMESPACES} -- gluster volume start $volume force
-        kubectl exec -i $1 -n ${NAMESPACES} -- gluster volume heal $volume full
+        kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume start $volume force
+        kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume heal $volume full
     done
 }
 
