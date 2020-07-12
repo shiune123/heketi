@@ -1,7 +1,5 @@
 #!/bin/bash
 
-
-
 #获取当前glusterfs应用所在的命名空间
 NAMESPACES=`/host/bin/kubectl get po --all-namespaces |grep glusterfs |grep -v heketi | grep -v NAME | awk '{print $1}' |sed -n 1p`
 TOKEN=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_TOKEN}`
@@ -10,11 +8,13 @@ MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].da
 
 #检查当前环境是否为故障节点恢复环境
 check() {
-    errorNode=`checkGFSConfigLost`
-    checkVGLost
-    checkLVLost
-    checkBrickLost
-    checkMountLost
+    nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep 1/1 |awk '{print $7}' |tr '\n' ' '`
+    #需要修复Gluster集群及brick目录和mount动作
+    errorNodes=`checkGFSConfigLost $nodeNames`
+    errorVGs=`checkVGLost $nodeNames`
+    
+    errorLVs=`checkLVLost $nodeNames`
+    errorBricks=`checkBrickLost $nodeNames`
 }
 
 getMatrixNodeId() {
@@ -134,9 +134,15 @@ recoveryVG() {
         vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.Info.path |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
         pvUUID=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Info.pv_uuid |sed 's#\"##g'`
         #删除软连接，防止vg创建失败
-        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- rm -rf /dev/$vgName
-        #创建pv
+        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- ls /dev |grep $vgName
+        if [ $? -eq 0 ]; then
+            /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- rm -rf /dev/$vgName
+        fi
+        /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- pvs |grep $devName
+        if [ $? -eq 0 ]; then
+             #创建pv
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K '$devName' --uuid '$pvUUID' --norestorefile
+        fi
         #创建vg
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm vgcreate -qq --physicalextentsize=4M --autobackup=n  '$vgName' '$devName'
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/bin/udevadm info --query=symlink --name=$devName
@@ -155,7 +161,6 @@ recoveryLV() {
         tpName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.LvmThinPool |sed 's#\"##g'`
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
     done
-    echo 0
 }
 
 #恢复brick文件夹
@@ -163,10 +168,10 @@ recoveryBrickFile() {
     #获取brickId，创建brick文件夹
     num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Bricks |/host/bin/jq length`
     for ((i=0;i<${num};i++)); do
-        brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$2"'.Bricks[$i] |sed 's#\"##g'`
+        brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$1"'.Bricks[$i] |sed 's#\"##g'`
+        vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.Info.path |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- mkdir -p /var/lib/heketi/mounts/$vgName/brick_$brickId
     done
-    echo 0
 }
 
 #恢复LV的挂载
@@ -256,8 +261,7 @@ checkPodStatus() {
 }
 
 checkGFSConfigLost() {
-    nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |awk '{print $7}' |tr '\n' ' '`
-    nodeNameArray=($nodeNames)
+    nodeNameArray=($1)
     errorNodeName=""
     cmd="ls /var/lib/heketi |grep -w mounts"
     for nodeName in ${nodeNameArray[@]}; do
@@ -271,20 +275,79 @@ checkGFSConfigLost() {
 }
 
 checkVGLost() {
-
+    nodeNameArray=($1)
+    errorNodeName=""
+    for nodeName in ${nodeNameArray[@]}; do
+        podIP=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep $nodeName |awk '{print $6}'`
+        nodeId=`getErrorNodeId $podIP`
+        deviceIds=`getErrorDeviceId $nodeId`
+        for deivceId in ${deviceIds[@]}; do
+            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$deivceId"'.Bricks[0] |sed 's#\"##g'`
+            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.Info.path |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
+            nodeId=`getMatrixNodeId $nodeName`
+            cmd="vgs |grep -w $vgName"
+            exitCode=`matrixExec $nodeId $cmd`
+            if [ $exitCode -ne 0 ]; then
+                errorNodeName=$nodeName $errorNodeName
+            fi
+        done
+    done
+    echo $errorNodeName
+        
 }
 
 checkLVLost() {
-
+    nodeNameArray=($1)
+    errorNodeName=""
+    for nodeName in ${nodeNameArray[@]}; do
+        podIP=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep $nodeName |awk '{print $6}'`
+        nodeId=`getErrorNodeId $podIP`
+        deviceIds=`getErrorDeviceId $nodeId`
+        for deivceId in ${deviceIds[@]}; do
+            brickIds=`getErrorBrickId $deivceId`
+            brickIdArray=($brickIds)
+            for brickId in ${brickIdArray[@]}; do
+                brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$deivceId"'.Bricks[0] |sed 's#\"##g'`
+                matrixNodeId=`getMatrixNodeId $nodeName`
+                cmd="lvs |grep -w brick_$brickId"
+                exitCode=`matrixExec "$matrixNodeId" "$cmd"`
+            if [ $exitCode -ne 0 ]; then
+                errorNodeName=$nodeName $errorNodeName
+            fi
+        done
+    done
+    echo $errorNodeName
 }
 
 checkBrickLost() {
-
+    nodeNameArray=($1)
+    errorNodeName=""
+    for nodeName in ${nodeNameArray[@]}; do
+        podIP=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep $nodeName |awk '{print $6}'`
+        nodeId=`getErrorNodeId $podIP`
+        deviceIds=`getErrorDeviceId $nodeId`
+        matrixNodeId=`getMatrixNodeId $nodeName`
+        for deivceId in ${deviceIds[@]}; do
+            brickIds=`getErrorBrickId $deivceId`
+            brickIdArray=($brickIds)
+            for brickId in ${brickIdArray[@]}; do
+                brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .deviceentries.'"$deivceId"'.Bricks[0] |sed 's#\"##g'`
+                vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq .brickentries.'"$brickId"'.Info.path |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
+                cmd="ls /var/lib/heketi/mounts/$vgName |grep -w brick_$brickId"
+                exitCode1=`matrixExec "$matrixNodeId" "$cmd"`
+                if [ $exitCode -ne 0  ]; then
+                    errorNodeName=$nodeName $errorNodeName
+                fi
+                cmd="cat /var/lib/heketi/fastab |grep brick_$brickId"
+                exitCode=`matrixExec "$matrixNodeId" "$cmd"`
+                if [ $exitCode -ne 0  ]; then
+                    errorNodeName=$nodeName $errorNodeName
+                fi
+        done
+    done
+    echo $errorNodeName
 }
 
-checkMountLost() {
-
-}
 
 matrixExec() {
     if [[ $IN_VIP =~ ":" ]]; then
@@ -297,6 +360,7 @@ matrixExec() {
 main() {
     while true; do
         check
+        sleep 60
     done
 }
 
