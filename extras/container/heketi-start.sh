@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 #
 # HEKETI_TOPOLOGY_FILE can be passed as an environment variable with the
 # filename of the initial topology.json. In case the heketi.db does not exist
