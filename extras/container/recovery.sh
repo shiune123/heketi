@@ -387,8 +387,8 @@ matrixExec() {
 
 main() {
     while true; do
-        check
         sleep 60
+        check
     done
 }
 

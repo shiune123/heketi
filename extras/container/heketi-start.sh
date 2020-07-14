@@ -198,5 +198,6 @@ if [[ "$(stat -c %s ${HEKETI_PATH}/heketi.db 2>/dev/null)" == 0 && -n "${HEKETI_
 
 else
     # just start in the foreground
-    exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json
+    exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json &
+    bash -x /usr/bin/recovery.sh &
 fi
