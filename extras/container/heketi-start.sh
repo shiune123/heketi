@@ -193,11 +193,10 @@ if [[ "$(stat -c %s ${HEKETI_PATH}/heketi.db 2>/dev/null)" == 0 && -n "${HEKETI_
         kill %1
         fail "failed to load topology from ${HEKETI_TOPOLOGY_FILE}"
     fi
-
+    bash -x /usr/bin/recovery.sh
     # bring heketi back to the foreground
     fg %1
 else
     # just start in the foreground
     exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json
 fi
-exec ./usr/bin/recovery.sh
