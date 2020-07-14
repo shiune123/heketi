@@ -16,8 +16,8 @@ check() {
     for errorNode in ${errorNodesarray[@]}; do
         #恢复GlusterFS配置
         if [ -n "$errorNode"  ]; then
-            recoveryGFSCluster $errorNode
             checkGFSConfig $errorNode
+            recoveryGFSCluster $errorNode
         fi
     done
 
@@ -140,6 +140,7 @@ recoveryGFSCluster() {
     done
     for ip in ${ips[@]};
     do
+        sleep 5
         gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
         /host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- systemctl restart glusterd
     done
@@ -264,7 +265,12 @@ recoveryMount() {
                 #创建/brick/.glusterfs，供后续存储数据恢复
                 /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- mkdir -p /var/lib/heketi/mounts/$vgName/brick_$brickId/brick/.glusterfs
                 #持久化挂载点信息
-                /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- awk "BEGIN {print \"/dev/mapper/$vgName-brick_$brickId /var/lib/heketi/mounts/$vgName/brick_$brickId xfs rw,inode64,noatime,nouuid 1 2\" >> \"/var/lib/heketi/fstab\"}"
+                cmd="cat /var/lib/heketi/fstab |grep brick_$brickId"
+                matrixNodeId=`getMatrixNodeId $nodeName`
+                exitCode1=`matrixExec "$matrixNodeId" "$cmd"`
+                if [ $exitCode1 -ne 0  ]; then
+                    /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- awk "BEGIN {print \"/dev/mapper/$vgName-brick_$brickId /var/lib/heketi/mounts/$vgName/brick_$brickId xfs rw,inode64,noatime,nouuid 1 2\" >> \"/var/lib/heketi/fstab\"}"
+                fi
             fi
         done
     done
