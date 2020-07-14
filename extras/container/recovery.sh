@@ -220,6 +220,8 @@ recoveryLV() {
             size=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".TpSize"`
             tpName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".LvmThinPool" |sed 's#\"##g'`
             /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
+            #删除brick目录触发修复brick
+            /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- rm -rf  /var/lib/heketi/mounts/$vgName/brick_$brickId
         done
     done
 }
