@@ -200,4 +200,4 @@ else
     # just start in the foreground
     exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json
 fi
-bash -x /usr/bin/recovery.sh
+exec ./usr/bin/recovery.sh
