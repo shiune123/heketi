@@ -23,7 +23,7 @@ check() {
     for errorNode in ${errorNodesarray[@]}; do
         #恢复GlusterFS配置
         if [ -n "$errorNode"  ]; then
-            echo "$errorNode" >　/var/lib/heketi/recoveryCluster.txt
+            echo "$errorNode">/var/lib/heketi/recoveryCluster.txt
             checkGFSConfig $errorNode
             recoveryGFSCluster $errorNode
             checkGFSCluster $errorNode
@@ -64,7 +64,7 @@ check() {
     for errorBrick in ${errorBricksArray[@]}; do
         #恢复目录
         if [ -n "$errorBrick" ]; then
-            echo "$errorBrick" >　/var/lib/heketi/recoveryBrick.txt
+            echo "$errorBrick" >/var/lib/heketi/recoveryBrick.txt
             recoveryBrickFile $errorBrick
             recoveryMount $errorBrick
             recoveryStorage $errorBrick
@@ -88,7 +88,7 @@ checkGFSCluster() {
         fi
     done
     if [ $flag -eq 0 ]; then
-        echo "" >　/var/lib/heketi/recoveryCluster.txt
+        echo "">/var/lib/heketi/recoveryCluster.txt
     fi
 }
 
@@ -347,7 +347,7 @@ recoveryStorage() {
             #查看.glusterfs文件夹中是否有文件存在
             file=`/host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- ls /var/lib/heketi/mounts/$vgName/brick_$brickId/brick/.glusterfs`
             if [ -n "$file" ]; then
-                echo "" >　/var/lib/heketi/recoveryBrick.txt
+                echo "" >/var/lib/heketi/recoveryBrick.txt
             fi
         done
     done
@@ -457,10 +457,12 @@ matrixExec() {
 
 main() {
     if [ ! -f "/var/lib/heketi/recoveryCluster.txt" ]; then
-      echo "" >　/var/lib/heketi/recoveryCluster.txt
+      touch /var/lib/heketi/recoveryCluster.txt
+      echo "" >/var/lib/heketi/recoveryCluster.txt
     fi
     if [ ! -f "/var/lib/heketi/recoveryBrick.txt" ]; then
-      echo "" >　/var/lib/heketi/recoveryBrick.txt
+      touch /var/lib/heketi/recoveryBrick.txt
+      echo "" >/var/lib/heketi/recoveryBrick.txt
     fi
     while true; do
         sleep 60
