@@ -83,7 +83,7 @@ checkGFSCluster() {
         gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
         peerNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Number of Peers:" |tr -cd [0-9]`
         inClusterNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Peer in Cluster" |wc -l`
-        if [ $peerNume -ne $inClusterNum ]; then
+        if [ $peerNum -ne $inClusterNum ]; then
             flag=1
         fi
     done
