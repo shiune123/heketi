@@ -10,19 +10,28 @@ MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].da
 check() {
     nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep 1/1 |awk '{print $7}' |tr '\n' ' '`
     #需要修复Gluster集群及自定义配置
+    errorCluster=`cat /var/lib/heketi/recoveryCluster.txt`
+    if [ -n "$errorCluster" ]; then
+        echo "[recoveryGlusterFS][INFO]not Recovery node:$errorCluster"
+        checkGFSConfig $errorCluster
+        recoveryGFSCluster $errorCluster
+        checkGFSCluster $errorCluster
+    fi
     errorNodes=`checkGFSConfigLost "$nodeNames"`
-    echo "LostGFS:$errorNodes"
+    echo "[recoveryGlusterFS][INFO]LostGFS:$errorNodes"
     errorNodesarray=($errorNodes)
     for errorNode in ${errorNodesarray[@]}; do
         #恢复GlusterFS配置
         if [ -n "$errorNode"  ]; then
+            echo "$errorNode" >　/var/lib/heketi/recoveryCluster.txt
             checkGFSConfig $errorNode
             recoveryGFSCluster $errorNode
+            checkGFSCluster $errorNode
         fi
     done
 
     errorVGs=`checkVGLost "$nodeNames"`
-    echo "LostVG:$errorVGs"
+    echo "[recoveryGlusterFS][INFO]LostVG:$errorVGs"
     errorVGsarray=($errorVGs)
     for errorVG in ${errorVGsarray[@]}; do
         #恢复VG
@@ -32,7 +41,7 @@ check() {
     done
 
     errorLVs=`checkLVLost "$nodeNames"`
-    echo "LostLV:$errorLVs"
+    echo "[recoveryGlusterFS][INFO]LostLV:$errorLVs"
     errorLVsarray=($errorLVs)
     echo $errorLVs
     for errorLV in ${errorLVsarray[@]}; do
@@ -42,19 +51,57 @@ check() {
             recoveryLV $errorLV
         fi
     done
-    
+
+    errors=`cat /var/lib/heketi/recoveryBrick.txt`
+    if [ -n "$errors" ]; then
+         echo "[recoveryGlusterFS][INFO]not Recovery brick:$errors"
+        checkGFSConfig $errors
+        recoveryGFSCluster $errors
+    fi
     errorBricks=`checkBrickLost "$nodeNames"`
-    echo "LostBricks:$errorBricks"
+    echo "[recoveryGlusterFS][INFO]LostBricks:$errorBricks"
     errorBricksArray=($errorBricks)
     for errorBrick in ${errorBricksArray[@]}; do
         #恢复目录
         if [ -n "$errorBrick" ]; then
+            echo "$errorBrick" >　/var/lib/heketi/recoveryBrick.txt
             recoveryBrickFile $errorBrick
             recoveryMount $errorBrick
             recoveryStorage $errorBrick
+            checkBrick $errorNode
         fi
     done
-    echo ok
+    echo "[recoveryGlusterFS][INFO] ok"
+}
+
+checkGFSCluster() {
+    flag=0
+    iplist=($1)
+    for ip in ${iplist[@]};
+    do
+        sleep 5
+        gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
+        peerNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Number of Peers:" |tr -cd [0-9]`
+        inClusterNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Peer in Cluster" |wc -l`
+        if [ $peerNume -ne $inClusterNum ]; then
+            flag=1
+        fi
+    done
+    if [ $flag -eq 0 ]; then
+        echo "" >　/var/lib/heketi/recoveryCluster.txt
+    fi
+}
+
+restartGlusterd() {
+    allIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep -v 'NAME' |grep glusterfs |awk '{print $6}' |tr '\n' ' '`
+    ips=($allIp)
+    for ip in ${ips[@]};
+    do
+        sleep 5
+        gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
+        /host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- systemctl restart glusterd
+    done
+    checkGFSCluster $allIp
 }
 
 getMatrixNodeId() {
@@ -126,7 +173,7 @@ recoveryGFSCluster() {
     newIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $6}'`
     newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'IP' |grep glusterfs |grep -w $1 |awk '{print $1}'`
     gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep -v 'NAME' |grep glusterfs |grep -v heketi |grep 1/1 |grep -v $newPod |awk '{print $1}' |tr '\n' ' '`
-    allIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep -v 'NAME' |grep glusterfs |grep -v heketi |awk '{print $6}' |tr '\n' ' '`
+    allIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep -v 'NAME' |grep glusterfs |awk '{print $6}' |tr '\n' ' '`
     gfsPodsArray=($gfsPods)
     execPod=`echo ${gfsPods} |awk '{print $1}'`
     newUUID=`/host/bin/kubectl exec -i $newPod  -n ${NAMESPACES} -- cat /var/lib/glusterd/glusterd.info |grep UUID |tr "UUID=" " " |sed 's/^[ \t]*//g'`
@@ -138,12 +185,7 @@ recoveryGFSCluster() {
     do
         /host/bin/kubectl exec -i $newPod  -n ${NAMESPACES} -- gluster peer probe $ip
     done
-    for ip in ${ips[@]};
-    do
-        sleep 5
-        gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
-        /host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- systemctl restart glusterd
-    done
+    restartGlusterd
 }
 
 #恢复用户自定义配置
@@ -197,6 +239,10 @@ recoveryVG() {
         if [ $? -ne 0 ]; then
              #创建pv
             /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K $devName --uuid $pvUUID --norestorefile
+            pvs=`/host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- pvs |grep $devName`
+            if [ ! -n "$pvs" ]; then
+              return
+            fi
         fi
         #创建vg
         /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- /usr/sbin/lvm vgcreate -qq --physicalextentsize=4M --autobackup=n  $vgName $devName
@@ -289,6 +335,22 @@ recoveryStorage() {
         /host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume start $volume force
         /host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume heal $volume full
     done
+    #检查是否开始恢复
+    gfsnodeId=`getErrorNodeId $1`
+    gfDevIds=`getErrorDeviceId $gfsnodeId`
+    deviceArray=($gfDevIds)
+    for devId in ${deviceArray[@]}; do
+        num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$devId\".Bricks" |/host/bin/jq length`
+        for ((i=0;i<${num};i++)); do
+            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$devId\".Bricks[$i]" |sed 's#\"##g'`
+            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
+            #查看.glusterfs文件夹中是否有文件存在
+            file=`/host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- ls /var/lib/heketi/mounts/$vgName/brick_$brickId/brick/.glusterfs`
+            if [ -n "$file" ]; then
+                echo "" >　/var/lib/heketi/recoveryBrick.txt
+            fi
+        done
+    done
 }
 
 checkGFSConfigLost() {
@@ -360,7 +422,7 @@ checkBrickLost() {
         nodeId=`getErrorNodeId $nodeName`
         deviceIds=`getErrorDeviceId $nodeId`
         matrixNodeId=`getMatrixNodeId $nodeName`
-	deviceArray=($deviceIds)
+	      deviceArray=($deviceIds)
         for deviceId in ${deviceArray[@]}; do
             brickIds=`getErrorBrickId $deviceId`
             brickIdArray=($brickIds)
@@ -394,6 +456,12 @@ matrixExec() {
 }
 
 main() {
+    if [ ! -f "/var/lib/heketi/recoveryCluster.txt" ]; then
+      echo "" >　/var/lib/heketi/recoveryCluster.txt
+    fi
+    if [ ! -f "/var/lib/heketi/recoveryBrick.txt" ]; then
+      echo "" >　/var/lib/heketi/recoveryBrick.txt
+    fi
     while true; do
         sleep 60
         check
