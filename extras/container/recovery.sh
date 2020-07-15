@@ -58,7 +58,6 @@ check() {
         recoveryBrickFile $errors
         recoveryMount $errors
         recoveryStorage $errors
-        checkBrick $errors
     fi
     errorBricks=`checkBrickLost "$nodeNames"`
     echo "[recoveryGlusterFS][INFO]LostBricks:$errorBricks"
@@ -70,7 +69,6 @@ check() {
             recoveryBrickFile $errorBrick
             recoveryMount $errorBrick
             recoveryStorage $errorBrick
-            checkBrick $errorNode
         fi
     done
     echo "[recoveryGlusterFS][INFO] ok"
