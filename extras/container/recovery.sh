@@ -302,10 +302,15 @@ recoveryMount() {
         for ((i=0;i<${num};i++)); do
             brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$devId\".Bricks[$i]" |sed 's#\"##g'`
             vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
-            #格式化LV
-            /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- mkfs.xfs -i size=512 -n size=8192 /dev/mapper/$vgName-brick_$brickId
+
              #挂载LV到brick目录中
-            /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- mount -o rw,inode64,noatime,nouuid /dev/mapper/$vgName-brick_$brickId /var/lib/heketi/mounts/$vgName/brick_$brickId
+            status=`/host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- df -h |grep /dev/mapper/$vgName-brick_$brickId`
+            if [ ! -n "$status"  ]; then
+                #格式化LV
+                /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- mkfs.xfs -i size=512 -n size=8192 /dev/mapper/$vgName-brick_$brickId
+                /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- mount -o rw,inode64,noatime,nouuid /dev/mapper/$vgName-brick_$brickId /var/lib/heketi/mounts/$vgName/brick_$brickId
+            fi
+            sleep 2
             status=`/host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- df -h |grep /dev/mapper/$vgName-brick_$brickId`
             if [ -n "$status"  ]; then
                 #创建/brick/.glusterfs，供后续存储数据恢复
