@@ -318,7 +318,7 @@ recoveryMount() {
                 #持久化挂载点信息
                 /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- touch /var/lib/heketi/fstab
                 cmd="cat /var/lib/heketi/fstab |grep brick_$brickId"
-                matrixNodeId=`getMatrixNodeId $nodeName`
+                matrixNodeId=`getMatrixNodeId $1`
                 exitCode=`matrixExec "$matrixNodeId" "$cmd"`
                 if [ $exitCode -ne 0  ]; then
                     /host/bin/kubectl exec -i $newPod -n ${NAMESPACES} -- awk "BEGIN {print \"/dev/mapper/$vgName-brick_$brickId /var/lib/heketi/mounts/$vgName/brick_$brickId xfs rw,inode64,noatime,nouuid 1 2\" >> \"/var/lib/heketi/fstab\"}"
