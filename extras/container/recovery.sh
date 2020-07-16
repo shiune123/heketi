@@ -71,7 +71,7 @@ check() {
             recoveryStorage $errorBrick
         fi
     done
-    echo "[recoveryGlusterFS][INFO] ok"
+    echo "[recoveryGlusterFS][INFO] Recovery ok"
 }
 
 checkGFSCluster() {
