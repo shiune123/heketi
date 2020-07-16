@@ -183,6 +183,8 @@ install:
 		$(DESTDIR)$(mandir)/man8/heketi-cli.8
 	$(INSTALL_PROGRAM) extras/container/heketi-start.sh \
 		$(DESTDIR)$(hekdir)/container/heketi-start.sh
+	$(INSTALL_PROGRAM) extras/container/recovery.sh \
+    		$(DESTDIR)$(hekdir)/container/recovery.sh
 	$(INSTALL_DATA) extras/container/heketi.json \
 		$(DESTDIR)$(hekdir)/container/heketi.json
 
