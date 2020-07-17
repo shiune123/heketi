@@ -417,7 +417,7 @@ checkGFSConfigLost() {
     for nodeName in ${nodeNameArray[@]}; do
         nodeId=`getMatrixNodeId "$nodeName"`
         exitCode=`matrixExec "$nodeId" "$cmd"`
-        if [ $exitCode -ne 0 ]; then
+        if [[ $exitCode -ne 0 ]]; then
             errorNodeName="$nodeName $errorNodeName"
         fi
     done
@@ -438,7 +438,7 @@ checkVGLost() {
             nodeId=`getMatrixNodeId "$nodeName"`
             cmd="vgs |grep -w $vgName"
             exitCode=`matrixExec "$nodeId" "$cmd"`
-            if [ $exitCode -ne 0 ]; then
+            if [[ $exitCode -ne 0 ]]; then
                 errorNodeName="$nodeName $errorNodeName"
                 break
             fi
@@ -453,6 +453,9 @@ matrixExec() {
             IN_VIP="\[$IN_VIP\]"
     fi
     exitCode=`curl -X POST  -k -H  "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"$1\",\"command\":\"$2\"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd |/host/bin/jq .exitCode`
+    if [ ! -n "$exitCode" ]; then
+        exitCode=0
+    fi
     echo $exitCode
 }
 
