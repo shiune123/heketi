@@ -14,7 +14,7 @@ check() {
     if [ "$notRecoveryNodeNum" -ne 0 ]; then
         for ((l=0;l<${notRecoveryNodeNum};l++)); do
             errorNode=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList[$l].nodeName |sed 's#\"##g'`
-            newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep glusterfs |grep -w $errorNode |awk '{print $1}' |grep -v 'NAME'`
+            newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep glusterfs |grep 1/1 |grep -w $errorNode |awk '{print $1}' |grep -v 'NAME'`
             echo "[recoveryGlusterFS][INFO]not Recovery node:$errorNode"
             if [ -n "$newPod" ]; then
                 setGFSConfig  $errorNode $newPod
@@ -94,7 +94,7 @@ check() {
             if [ $flags -eq 0 ]; then
                 echo `cat /var/lib/heketi/recovery.json | /host/bin/jq ".nodeList +=[{\"nodeName\": \"$recoveryNode\"}]"` > /var/lib/heketi/recovery.json
             fi
-            newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep glusterfs |grep -w $recoveryNode |awk '{print $1}' |grep -v 'NAME'`
+            newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep glusterfs |grep 1/1 |grep -w $recoveryNode |awk '{print $1}' |grep -v 'NAME'`
             setGFSConfig  $recoveryNode $newPod
             recoveryDevice $recoveryNode $newPod
             recoveryStorage $recoveryNode $newPod
