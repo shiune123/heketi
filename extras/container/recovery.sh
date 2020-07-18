@@ -95,9 +95,13 @@ check() {
                 echo `cat /var/lib/heketi/recovery.json | /host/bin/jq ".nodeList +=[{\"nodeName\": \"$recoveryNode\"}]"` > /var/lib/heketi/recovery.json
             fi
             newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep Running |grep glusterfs |grep 1/1 |grep -w $recoveryNode |awk '{print $1}' |grep -v 'NAME'`
-            setGFSConfig  $recoveryNode $newPod
-            recoveryDevice $recoveryNode $newPod
-            recoveryStorage $recoveryNode $newPod
+            if [ -n "$newPod" ]; then
+                setGFSConfig  $recoveryNode $newPod
+                recoveryDevice $recoveryNode $newPod
+                recoveryStorage $recoveryNode $newPod
+            else
+                continue
+            fi
         done
         file=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
         if [[ $file -ne 0 ]]; then
@@ -385,10 +389,18 @@ recoveryStorage() {
     done
     volumes=`/host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume list |tr "\n" " "`
     arrayVolume=($volumes)
+    flags=0
     for volume in ${arrayVolume[@]}; do
         /host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume start $volume force
-        /host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume heal $volume full
+        healStatus=`/host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume heal $volume full |grep "been unsuccessfull"`
+        if [ -n "$healStatus" ]; then
+            flags=1
+        fi
     done
+    sleep 5
+    #保证glusterfs确定能完成恢复
+    /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl stop glusterfsd
+    /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl restart glusterd
     #检查是否开始恢复
     gfsnodeId=`getErrorNodeId $1`
     gfDevIds=`getErrorDeviceId $gfsnodeId`
@@ -405,7 +417,7 @@ recoveryStorage() {
             fi
         done
     done
-    if [[ $flag -eq 0 ]]; then
+    if [ $flag -eq 0 -a $flags -eq 0 ]; then
         echo `cat /var/lib/heketi/recovery.json | /host/bin/jq ".nodeList -=[{\"nodeName\": \"$1\"}]"` > /var/lib/heketi/recovery.json
     fi
 }
