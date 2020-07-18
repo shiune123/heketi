@@ -401,6 +401,13 @@ recoveryStorage() {
     #保证glusterfs确定能完成恢复
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl stop glusterfsd
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl restart glusterd
+    for volume in ${arrayVolume[@]}; do
+        /host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume start $volume force
+        healStatus=`/host/bin/kubectl exec -i $nomalPod -n ${NAMESPACES} -- gluster volume heal $volume full |grep "been unsuccessfull"`
+        if [ -n "$healStatus" ]; then
+            flags=1
+        fi
+    done
     #检查是否开始恢复
     gfsnodeId=`getErrorNodeId $1`
     gfDevIds=`getErrorDeviceId $gfsnodeId`
