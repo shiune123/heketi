@@ -361,7 +361,7 @@ setGFSConfig() {
     done
     port=`/host/bin/kubectl exec -i $execPod -n ${NAMESPACES} -- cat /etc/glusterfs/glusterd.vol |grep "option max-port" | tr -cd "[0-9]"`
 
-    if [ "$port" != "49352" ]; then
+    if [ "$port" != "49352" -a -n "$port" ]; then
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- sed -i 's/    option max-port  49352/    option max-port  $port/g' /etc/glusterfs/glusterd.vol
         /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl restart glusterd
     fi
