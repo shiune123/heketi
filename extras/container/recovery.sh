@@ -479,19 +479,22 @@ matrixExec() {
 }
 
 main() {
-    if [ ! -f "/var/lib/heketi/recovery.json" ]; then
-      touch /var/lib/heketi/recovery.json
-      cat>/var/lib/heketi/recovery.json<<EOF
+    isDeploy=`/host/bin/kubectl get po -n ${NAMESPACES} |awk '{print $1}' |grep deploy-heketi`
+    if [ ! -n "$isDeploy" ]; then
+        if [ ! -f "/var/lib/heketi/recovery.json" ]; then
+          touch /var/lib/heketi/recovery.json
+          cat>/var/lib/heketi/recovery.json<<EOF
 {
     "nodeList": [
     ]
 }
 EOF
+        fi
+        while true; do
+            sleep 60
+            check
+        done
     fi
-    while true; do
-        sleep 60
-        check
-    done
 }
 
 main
