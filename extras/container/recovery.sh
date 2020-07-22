@@ -124,9 +124,9 @@ recoveryDevice() {
     if [ "$podStatus" != "active" ]; then
         return
     fi
-    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep 1/1 |grep glusterfs |awk '{print $1}' |grep -v 'NAME' |grep -v heketi |grep 1/1 |grep -v $2 |awk '{print $1}' |tr '\n' ' '`
+    gfsPods=`/host/bin/kubectl get po -n ${NAMESPACES} |grep 1/1 |grep -v $2 |awk '{print $1}' |grep -v 'NAME' |grep glusterfs |tr '\n' ' '`
     allIp=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep -v 'NAME' |grep glusterfs |awk '{print $6}' |tr '\n' ' '`
-    gfsPodsArray=($gfsPods)
+    gfsPodsArrays=($gfsPods)
     execPod=""
     for gfsPod in ${gfsPodsArrays[@]}; do
         volumeStatus=`/host/bin/kubectl exec -i $gfsPod -n  ${NAMESPACES} -- gluster volume status |grep heketi`
@@ -148,11 +148,42 @@ recoveryDevice() {
     done
     #重启Glusterfs
     restartGlusterd
+    #防止glusterfs的集群状态出现peer in cluster以外的状况，需要到三个节点常查询peers文件夹中UUID文件中的state是否为3，不是则修改为3
+    sleep 2
+    UUIDS=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- ls /var/lib/glusterd/peers/ |tr '\n' ' '`
+    if [ -n "$UUIDS" ]; then
+        UUIDSArray=($UUIDS)
+        for UUIDFile in ${UUIDSArray[@]}; do
+            if [ -n "$UUIDFile" ]; then
+                statusNum=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- cat /var/lib/glusterd/peers/$UUIDFile |grep 'state=' |tr -cd [0-9]:`
+                if [[ $statusNum -ne 3 ]]; then
+                    /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- sed -i 's/'state=$statusNum'/'state=3'/g' /var/lib/glusterd/peers/$UUIDFile
+                fi
+            fi
+        done
+        /host/bin/kubectl exec -i $2  -n ${NAMESPACES} -- systemctl restart glusterd
+    fi
+    for gfsPod in ${gfsPodsArrays[@]}; do
+          sleep 5
+          UUIDS=`/host/bin/kubectl exec -i $gfsPod -n ${NAMESPACES} -- ls /var/lib/glusterd/peers/ |tr '\n' ' '`
+          if [ -n "$UUIDS" ]; then
+              UUIDSArray=($UUIDS)
+              for UUIDFile in ${UUIDSArray[@]}; do
+                  if [ -n "$UUIDFile" ]; then
+                      statusNum=`/host/bin/kubectl exec -i $gfsPod -n ${NAMESPACES} -- cat /var/lib/glusterd/peers/$UUIDFile |grep 'state=' |tr -cd [0-9]:`
+                      if [[ $statusNum -ne 3 ]]; then
+                          /host/bin/kubectl exec -i $gfsPod -n ${NAMESPACES} -- sed -i 's/'state=$statusNum'/'state=3'/g' /var/lib/glusterd/peers/$UUIDFile
+                      fi
+                  fi
+              done
+              /host/bin/kubectl exec -i $gfsPod  -n ${NAMESPACES} -- systemctl restart glusterd
+          fi
+    done
     #检查GlusterFS集群是否恢复完成
     flag=0
     for ip in ${ips[@]};
     do
-        sleep 5
+        sleep 2
         gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
         peerNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Number of Peers:" |tr -cd [0-9]`
         inClusterNum=`/host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- gluster peer status |grep "Peer in Cluster" |wc -l`
@@ -261,7 +292,7 @@ restartGlusterd() {
     ips=($allIp)
     for ip in ${ips[@]};
     do
-        sleep 5
+        sleep 3
         gfsPodName=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep $ip |awk '{print $1}' |grep -v NAME`
         /host/bin/kubectl exec -i $gfsPodName  -n ${NAMESPACES} -- systemctl restart glusterd
     done
