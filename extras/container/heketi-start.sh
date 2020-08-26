@@ -6,16 +6,7 @@
 
 : "${HEKETI_PATH:=/var/lib/heketi}"
 : "${BACKUPDB_PATH:=/backupdb}"
-: "${TMP_PATH:=/tmp}"
-: "${HEKETI_DB_ARCHIVE_PATH:=${HEKETI_PATH}/archive}"
-: "${HEKETI_TRY_UPDATE_DB_VOL:=no}"
-HEKETI_BIN="/usr/bin/heketi"
 LOG="${HEKETI_PATH}/container.log"
-
-# allow disabling the archive path
-case "${HEKETI_DB_ARCHIVE_PATH}" in
-    -|/dev/null) HEKETI_DB_ARCHIVE_PATH="" ;;
-esac
 
 info() {
     echo "$*" | tee -a "$LOG"
@@ -29,70 +20,6 @@ fail() {
     error "$@"
     exit 1
 }
-
-archive_db() {
-    # create an archive file for the previous copy of the db
-    # before the server starts up
-    mkdir -p "${HEKETI_DB_ARCHIVE_PATH}"
-
-    # only archive the db if the db content is valid
-    if ! "$HEKETI_BIN" db export --dbfile "${HEKETI_PATH}/heketi.db" --jsonfile - >/dev/null ; then
-        error "Unable to export db. DB contents may not be valid"
-        return 1
-    fi
-
-    mapfile -t afiles < <(find "${HEKETI_DB_ARCHIVE_PATH}" \
-        -maxdepth 1 -name 'heketi.db-archive-*.gz' | sort)
-    newname="heketi.db-archive-$(date +%Y-%m-%d.%s).gz"
-    newpath="${HEKETI_DB_ARCHIVE_PATH}/${newname}"
-    gzip -9 -c "${HEKETI_PATH}/heketi.db" > "${newpath}"
-    if [[ $? -ne 0 ]]; then
-        rm -f "${newpath}"
-        error "Unable to create archive"
-        return 1
-    fi
-    sha256sum "${newpath}" > "${newpath}.sha256"
-    if [[ $? -ne 0 ]]; then
-        rm -f "${newpath}" "${newpath}.sha256"
-        error "Unable to get sha256 sum of archive"
-        return 1
-    fi
-    # if the new file is a dupe, immediately prune it
-    if [ "${#afiles[@]}" -gt 0 ]; then
-        sum="$(awk '{print $1}' "${newpath}.sha256")"
-        prevpath="${afiles[-1]}"
-        if grep -q "$sum" "${prevpath}.sha256" >/dev/null; then
-            # found same hash as previous db, remove new copy
-            rm -f "${newpath}" "${newpath}.sha256"
-        fi
-    fi
-    return 0
-}
-
-prune_archives() {
-    # prune old archive copies
-    HEKETI_DB_ARCHIVE_COUNT="${HEKETI_DB_ARCHIVE_COUNT:-5}"
-    mapfile -t afiles < <(find "${HEKETI_DB_ARCHIVE_PATH}" \
-        -maxdepth 1 -name 'heketi.db-archive-*.gz' | sort)
-    if [[ "${#afiles[@]}" -gt ${HEKETI_DB_ARCHIVE_COUNT} ]]; then
-        curr=0
-        count=$((${#afiles[@]}-HEKETI_DB_ARCHIVE_COUNT))
-        while [[ $curr -lt $count ]]; do
-            rm -f "${afiles[$curr]}"*
-            curr=$((curr+1))
-        done
-    fi
-}
-
-update_dbvol() {
-    mount | grep "${HEKETI_PATH}" | grep -q heketidbstorage
-    if [ $? -ne 0 ]; then
-        # heketidb storage not in use, skip attempt to update settings
-        return 16
-    fi
-    "$HEKETI_BIN" offline update-dbvol --config=/etc/heketi/heketi.json
-}
-
 
 info "Setting up heketi database"
 
@@ -143,20 +70,15 @@ if [[ $flock_status -ne 0 ]]; then
     fail "Database file is read-only"
 fi
 
-# this creates archival copies of the db if needed for disaster
-# recovery purposes
-if [[ "${HEKETI_DB_ARCHIVE_PATH}" && -f "${HEKETI_PATH}/heketi.db" ]]; then
-    archive_db && prune_archives
-fi
-
-# this is used to restore secret based backups
 if [[ -d "${BACKUPDB_PATH}" ]]; then
     if [[ -f "${BACKUPDB_PATH}/heketi.db.gz" ]] ; then
-        gunzip -c "${BACKUPDB_PATH}/heketi.db.gz" > "${TMP_PATH}/heketi.db"
+        gunzip -c "${BACKUPDB_PATH}/heketi.db.gz" > "${BACKUPDB_PATH}/heketi.db"
         if [[ $? -ne 0 ]]; then
             fail "Unable to extract backup database"
         fi
-        cp "${TMP_PATH}/heketi.db" "${HEKETI_PATH}/heketi.db"
+    fi
+    if [[ -f "${BACKUPDB_PATH}/heketi.db" ]] ; then
+        cp "${BACKUPDB_PATH}/heketi.db" "${HEKETI_PATH}/heketi.db"
         if [[ $? -ne 0 ]]; then
             fail "Unable to copy backup database"
         fi
@@ -164,18 +86,12 @@ if [[ -d "${BACKUPDB_PATH}" ]]; then
     fi
 fi
 
-if [[ "${HEKETI_TRY_UPDATE_DB_VOL}" = "yes" ]]; then
-    # the update is best effort so even if the update fails the
-    # script will continue anyway
-    update_dbvol
-fi
-
 # if the heketi.db does not exist and HEKETI_TOPOLOGY_FILE is set, start the
 # heketi service in the background and load the topology. Once done, move the
 # heketi service back to the foreground again.
 if [[ "$(stat -c %s ${HEKETI_PATH}/heketi.db 2>/dev/null)" == 0 && -n "${HEKETI_TOPOLOGY_FILE}" ]]; then
     # start hketi in the background
-    "$HEKETI_BIN" --config=/etc/heketi/heketi.json &
+    /usr/bin/heketi --config=/etc/heketi/heketi.json &
 
     # wait until heketi replies
     while ! curl http://localhost:8080/hello; do
@@ -198,5 +114,5 @@ if [[ "$(stat -c %s ${HEKETI_PATH}/heketi.db 2>/dev/null)" == 0 && -n "${HEKETI_
 else
     # just start in the foreground
     bash /usr/bin/recovery.sh &
-    exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json
+    exec /usr/bin/heketi --config=/etc/heketi/heketi.json
 fi
