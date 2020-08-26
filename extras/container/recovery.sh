@@ -214,7 +214,7 @@ recoveryDevice() {
         #获取vg名称
         brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$dev\".Bricks[0]" |sed 's#\"##g'`
 #        vgNames=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
-        vgNames="vgs_"$dev
+        vgNames="vg_"$dev
         pvUUID=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$dev\".Info.pv_uuid" |sed 's#\"##g'`
         #删除软连接，防止vg创建失败
         vgFile=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- ls /dev |grep $vgNames`
