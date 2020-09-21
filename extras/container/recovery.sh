@@ -226,9 +226,9 @@ recoveryDevice() {
         if [ ! -n "$pvs" ]; then
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K $devName --uuid $pvUUID --norestorefile
             pvs=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- pvs |grep $devName`
-            if [ ! -n "$pvs" ]; then
-              return
-            fi
+#            if [ ! -n "$pvs" ]; then
+#              return
+#            fi
         fi
         #判断VG是否存在
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
