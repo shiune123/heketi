@@ -199,7 +199,8 @@ else
     # just start in the foreground
     touch /var/lib/heketi/recovery.log
     touch /var/lib/heketi/container.log
-    bash -x /usr/bin/recovery.sh >> /var/lib/heketi/recovery.log &
+    /usr/sbin/crond -i
+    bash -x /usr/bin/recovery.sh &>> /var/lib/heketi/recovery.log &
     exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json >> /var/lib/heketi/container.log
 fi
 

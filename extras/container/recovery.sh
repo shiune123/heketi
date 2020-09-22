@@ -513,6 +513,10 @@ matrixExec() {
 
 main() {
     isDeploy=`/host/bin/kubectl get po -n ${NAMESPACES} |awk '{print $1}' |grep deploy-heketi`
+    res=`ps -ef |grep crond`
+    if [ ! -n "$res" ]; then
+                /usr/sbin/crond -i
+    fi
     if [ ! -n "$isDeploy" ]; then
         if [ ! -f "/var/lib/heketi/recovery.json" ]; then
           touch /var/lib/heketi/recovery.json
@@ -525,6 +529,10 @@ EOF
         fi
         while true; do
             sleep 60
+            res=`ps -ef |grep crond`
+            if [ ! -n "$res" ]; then
+                /usr/sbin/crond -i
+            fi
             check
         done
     fi
