@@ -197,11 +197,10 @@ if [[ "$(stat -c %s ${HEKETI_PATH}/heketi.db 2>/dev/null)" == 0 && -n "${HEKETI_
     fg %1
 else
     # just start in the foreground
-    mkdir -p /var/log/heketi
-    touch /var/log/heketi/recovery.log
-    touch /var/log/heketi/heketi.log
-    bash /usr/bin/recovery.sh >> /var/log/heketi/recovery.log &
-    exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json >> /var/log/heketi/heketi.log
+    touch /var/lib/heketi/recovery.log
+    touch /var/lib/heketi/container.log
+    bash -x /usr/bin/recovery.sh >> /var/lib/heketi/recovery.log &
+    exec "$HEKETI_BIN" --config=/etc/heketi/heketi.json >> /var/lib/heketi/container.log
 fi
 
-fi
+

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+#set -x
 #获取当前glusterfs应用所在的命名空间
 NAMESPACES=`/host/bin/kubectl get po --all-namespaces |grep glusterfs |grep -v heketi | grep -v NAME | awk '{print $1}' |sed -n 1p`
 TOKEN=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_TOKEN}`
