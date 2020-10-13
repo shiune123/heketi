@@ -238,6 +238,8 @@ recoveryDevice() {
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/bin/udevadm info --query=symlink --name=$devName
         fi
         #判断VG是否创建成功
+        #先扫描vg，防止无法查询到新的vg
+        scanVg
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
         if [ ! -n "$vgStatus" ]; then
             echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] failed "
@@ -509,6 +511,16 @@ matrixExec() {
         exitCode=0
     fi
     echo $exitCode
+}
+
+# 添加vg扫描，防止后续卸载时，无法获取vg，导致磁盘没有清空
+scanVg(){
+    nodesInfo=`curl -k -H "X-Auth-Token:$TOKEN" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/cluster/nodes`
+    num=`echo ${nodesInfo}|/host/bin/jq length`
+    for ((i=0;i<${num};i++)); do
+          nodeId=`echo ${nodesInfo} |/host/bin/jq -r .[$i].nodeId`
+          curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"${nodeId}\",\"command\":\"vgscan --cache \"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd
+    done
 }
 
 main() {
