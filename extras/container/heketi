@@ -1,0 +1,8 @@
+/var/log/heketi/*.log
+{
+    rotate 5
+    size 100M
+    copytruncate
+    compress
+    missingok
+}
