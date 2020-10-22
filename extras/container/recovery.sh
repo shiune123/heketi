@@ -1,5 +1,5 @@
 #!/bin/bash
-#set -x
+
 #获取当前glusterfs应用所在的命名空间
 NAMESPACES=`/host/bin/kubectl get po --all-namespaces |grep glusterfs |grep -v heketi | grep -v NAME | awk '{print $1}' |sed -n 1p`
 TOKEN=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_TOKEN}`
@@ -8,6 +8,8 @@ MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].da
 
 #检查当前环境是否为故障节点恢复环境
 check() {
+    #先扫描vg，防止无法查询到新的vg
+    scanVg
     nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep 1/1 |awk '{print $7}' |tr '\n' ' '`
     #上次没有修复成功，优先修复
     notRecoveryNodeNum=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
@@ -226,9 +228,9 @@ recoveryDevice() {
         if [ ! -n "$pvs" ]; then
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K $devName --uuid $pvUUID --norestorefile
             pvs=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- pvs |grep $devName`
-#            if [ ! -n "$pvs" ]; then
-#              return
-#            fi
+            if [ ! -n "$pvs" ]; then
+              return
+            fi
         fi
         #判断VG是否存在
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
@@ -486,9 +488,8 @@ checkVGLost() {
         deviceIds=`getErrorDeviceId $nodeId`
         deviceArray=($deviceIds)
         for deviceId in ${deviceArray[@]}; do
-#            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"${deviceId}\".Bricks[0]" |sed 's#\"##g'`
-#            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"${brickId}\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
-            vgName="vg_"$deviceId
+            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"${deviceId}\".Bricks[0]" |sed 's#\"##g'`
+            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"${brickId}\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
             nodeId=`getMatrixNodeId "$nodeName"`
             cmd="vgs |grep -w $vgName"
             exitCode=`matrixExec "$nodeId" "$cmd"`
@@ -513,7 +514,7 @@ matrixExec() {
     echo $exitCode
 }
 
-# 添加vg扫描，防止后续卸载时，无法获取vg，导致磁盘没有清空
+# 添加vg扫描，防止无法获取vg，导致修改故障节点失败
 scanVg(){
     nodesInfo=`curl -k -H "X-Auth-Token:$TOKEN" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/cluster/nodes`
     num=`echo ${nodesInfo}|/host/bin/jq length`
@@ -525,10 +526,6 @@ scanVg(){
 
 main() {
     isDeploy=`/host/bin/kubectl get po -n ${NAMESPACES} |awk '{print $1}' |grep deploy-heketi`
-    res=`ps -ef |grep crond`
-    if [ ! -n "$res" ]; then
-                /usr/sbin/crond -i
-    fi
     if [ ! -n "$isDeploy" ]; then
         if [ ! -f "/var/lib/heketi/recovery.json" ]; then
           touch /var/lib/heketi/recovery.json
@@ -541,10 +538,6 @@ EOF
         fi
         while true; do
             sleep 60
-            res=`ps -ef |grep crond`
-            if [ ! -n "$res" ]; then
-                /usr/sbin/crond -i
-            fi
             check
         done
     fi
