@@ -9,7 +9,7 @@ MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].da
 #检查当前环境是否为故障节点恢复环境
 check() {
     #先扫描vg，防止无法查询到新的vg
-    scanVg
+#    scanVg
     nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep 1/1 |awk '{print $7}' |tr '\n' ' '`
     #上次没有修复成功，优先修复
     notRecoveryNodeNum=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
@@ -241,11 +241,13 @@ recoveryDevice() {
         fi
         #判断VG是否创建成功
         #先扫描vg，防止无法查询到新的vg
-        scanVg
+#        scanVg
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
         if [ ! -n "$vgStatus" ]; then
             echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] failed "
             return
+        else
+            echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] ok "
         fi
         #创建lv
         num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$dev\".Bricks" |/host/bin/jq length`
@@ -258,9 +260,16 @@ recoveryDevice() {
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
             sleep 2
             #检查lv是否创建成功
-            cmd="lvs |grep -w brick_$brickId"
-            exitCode=`matrixExec "$matrixNodeId" "$cmd"`
-            if [ $exitCode -ne 0 ]; then
+#            cmd="lvs |grep -w brick_$brickId"
+#            exitCode=`matrixExec "$matrixNodeId" "$cmd"`
+#            if [ $exitCode -ne 0 ]; then
+#                echo "[recoveryGlusterFS][ERROR] Recovery LV[brick_$brickId] failed"
+#                return
+#            else
+#                echo "[recoveryGlusterFS][INFO] Recovery LV[brick_$brickId] ok"
+#            fi
+            lvStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- lvs |grep -w brick_$brickId`
+            if [ ! -n "$vgStatus" ]; then
                 echo "[recoveryGlusterFS][ERROR] Recovery LV[brick_$brickId] failed"
                 return
             else

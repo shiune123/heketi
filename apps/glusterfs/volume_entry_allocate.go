@@ -28,11 +28,13 @@ func (v *VolumeEntry) allocBricksInCluster(db wdb.DB,
 	// Note: subsequent calls to gen need to return decreasing
 	//       brick sizes in order for the following code to work!
 	gen := v.Durability.BrickSizeGenerator(size)
-
+	logger.Debug("%v", size)
 	// Try decreasing possible brick sizes until space is found
 	for {
 		// Determine next possible brick size
 		sets, brick_size, err := gen()
+		logger.Debug("brick_size = %v", brick_size)
+		logger.Debug("sets = %v", sets)
 		if err != nil {
 			logger.Err(err)
 			return nil, err
