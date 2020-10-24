@@ -435,6 +435,7 @@ recoveryStorage() {
     done
     sleep 5
     #保证glusterfs确定能完成恢复
+    /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl start glusterfsd
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl stop glusterfsd
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl restart glusterd
     for volume in ${arrayVolume[@]}; do
