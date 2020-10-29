@@ -1,15 +1,18 @@
 #!/bin/bash
-
+#set -x
 #获取当前glusterfs应用所在的命名空间
 NAMESPACES=`/host/bin/kubectl get po --all-namespaces |grep glusterfs |grep -v heketi | grep -v NAME | awk '{print $1}' |sed -n 1p`
 TOKEN=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_TOKEN}`
 IN_VIP=`/host/bin/kubectl get configmap -n matrix -o jsonpath={.items[0].data.MATRIX_INTERNAL_VIP}`
 MATRIX_SECURE_PORT=`/host/bin/kubectl get cm -n matrix -o jsonpath={.items[0].data.MATRIX_SECURE_PORT}`
+if [[ $IN_VIP =~ ":" ]]; then
+        IN_VIP="\[$IN_VIP\]"
+fi
+NODESINFO=`curl -k -H "X-Auth-Token:${TOKEN}" https://${IN_VIP}:${MATRIX_SECURE_PORT}/matrix/rsapi/v1.0/cluster/nodes`
+NODESNUM=`echo ${NODESINFO} |/host/bin/jq length`
 
 #检查当前环境是否为故障节点恢复环境
 check() {
-    #先扫描vg，防止无法查询到新的vg
-#    scanVg
     nodeNames=`/host/bin/kubectl get po -n ${NAMESPACES} -owide |grep glusterfs |grep 1/1 |awk '{print $7}' |tr '\n' ' '`
     #上次没有修复成功，优先修复
     notRecoveryNodeNum=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
@@ -228,9 +231,9 @@ recoveryDevice() {
         if [ ! -n "$pvs" ]; then
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm pvcreate -ff --metadatasize=128M --dataalignment=256K $devName --uuid $pvUUID --norestorefile
             pvs=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- pvs |grep $devName`
-            if [ ! -n "$pvs" ]; then
-              return
-            fi
+#            if [ ! -n "$pvs" ]; then
+#              return
+#            fi
         fi
         #判断VG是否存在
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
@@ -241,7 +244,7 @@ recoveryDevice() {
         fi
         #判断VG是否创建成功
         #先扫描vg，防止无法查询到新的vg
-#        scanVg
+        scanVg
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
         if [ ! -n "$vgStatus" ]; then
             echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] failed "
@@ -260,16 +263,9 @@ recoveryDevice() {
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
             sleep 2
             #检查lv是否创建成功
-#            cmd="lvs |grep -w brick_$brickId"
-#            exitCode=`matrixExec "$matrixNodeId" "$cmd"`
-#            if [ $exitCode -ne 0 ]; then
-#                echo "[recoveryGlusterFS][ERROR] Recovery LV[brick_$brickId] failed"
-#                return
-#            else
-#                echo "[recoveryGlusterFS][INFO] Recovery LV[brick_$brickId] ok"
-#            fi
-            lvStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- lvs |grep -w brick_$brickId`
-            if [ ! -n "$vgStatus" ]; then
+            cmd="lvs |grep -w brick_$brickId"
+            exitCode=`matrixExec "$matrixNodeId" "$cmd"`
+            if [ $exitCode -ne 0 ]; then
                 echo "[recoveryGlusterFS][ERROR] Recovery LV[brick_$brickId] failed"
                 return
             else
@@ -313,15 +309,10 @@ restartGlusterd() {
 }
 
 getMatrixNodeId() {
-    if [[ $IN_VIP =~ ":" ]]; then
-        IN_VIP="\[$IN_VIP\]"
-    fi
-    nodesInfo=`curl -k -H "X-Auth-Token:${TOKEN}" https://${IN_VIP}:${MATRIX_SECURE_PORT}/matrix/rsapi/v1.0/cluster/nodes`
-    nodesNum=`echo ${nodesInfo} |/host/bin/jq length`
-    for ((i=0;i<${nodesNum};i++)); do
-        nodeName=`echo ${nodesInfo} |/host/bin/jq -r .[$i].nodeBaseInfo.nodeName`
+    for ((i=0;i<${NODESNUM};i++)); do
+        nodeName=`echo ${NODESINFO} |/host/bin/jq -r .[$i].nodeBaseInfo.nodeName`
         if [ "$nodeName" = "$1" ]; then
-            echo ${nodesInfo} |/host/bin/jq -r .[$i].nodeId
+            echo ${NODESINFO} |/host/bin/jq -r .[$i].nodeId
             break
         fi
     done
@@ -444,7 +435,6 @@ recoveryStorage() {
     done
     sleep 5
     #保证glusterfs确定能完成恢复
-    /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl start glusterfsd
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl stop glusterfsd
     /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- systemctl restart glusterd
     for volume in ${arrayVolume[@]}; do
@@ -498,8 +488,9 @@ checkVGLost() {
         deviceIds=`getErrorDeviceId $nodeId`
         deviceArray=($deviceIds)
         for deviceId in ${deviceArray[@]}; do
-            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"${deviceId}\".Bricks[0]" |sed 's#\"##g'`
-            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"${brickId}\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
+#            brickId=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"${deviceId}\".Bricks[0]" |sed 's#\"##g'`
+#            vgName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"${brickId}\".Info.path" |sed -r "s/.*"mounts"(.*)"brick_".*/\1/"| sed 's#/##g'`
+            vgName="vg_"$deviceId
             nodeId=`getMatrixNodeId "$nodeName"`
             cmd="vgs |grep -w $vgName"
             exitCode=`matrixExec "$nodeId" "$cmd"`
@@ -510,13 +501,10 @@ checkVGLost() {
         done
     done
     echo $errorNodeName
-        
+
 }
 
 matrixExec() {
-    if [[ $IN_VIP =~ ":" ]]; then
-            IN_VIP="\[$IN_VIP\]"
-    fi
     exitCode=`curl -X POST  -k -H  "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"$1\",\"command\":\"$2\"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd |/host/bin/jq .exitCode`
     if [ ! -n "$exitCode" ]; then
         exitCode=0
@@ -524,18 +512,20 @@ matrixExec() {
     echo $exitCode
 }
 
-# 添加vg扫描，防止无法获取vg，导致修改故障节点失败
+# 添加vg扫描，防止后续卸载时，无法获取vg，导致磁盘没有清空
 scanVg(){
-    nodesInfo=`curl -k -H "X-Auth-Token:$TOKEN" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/cluster/nodes`
-    num=`echo ${nodesInfo}|/host/bin/jq length`
-    for ((i=0;i<${num};i++)); do
-          nodeId=`echo ${nodesInfo} |/host/bin/jq -r .[$i].nodeId`
+    for ((i=0;i<${NODESNUM};i++)); do
+          nodeId=`echo ${NODESINFO} |/host/bin/jq -r .[$i].nodeId`
           curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"${nodeId}\",\"command\":\"vgscan --cache \"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd
     done
 }
 
 main() {
     isDeploy=`/host/bin/kubectl get po -n ${NAMESPACES} |awk '{print $1}' |grep deploy-heketi`
+    res=`ps -ef |grep crond`
+    if [ ! -n "$res" ]; then
+                /usr/sbin/crond -i
+    fi
     if [ ! -n "$isDeploy" ]; then
         if [ ! -f "/var/lib/heketi/recovery.json" ]; then
           touch /var/lib/heketi/recovery.json
@@ -546,8 +536,13 @@ main() {
 }
 EOF
         fi
+        scanVg
         while true; do
             sleep 60
+            res=`ps -ef |grep crond`
+            if [ ! -n "$res" ]; then
+                /usr/sbin/crond -i
+            fi
             check
         done
     fi

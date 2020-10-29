@@ -185,6 +185,10 @@ install:
 		$(DESTDIR)$(hekdir)/container/heketi-start.sh
 	$(INSTALL_PROGRAM) extras/container/recovery.sh \
 		$(DESTDIR)$(hekdir)/container/recovery.sh
+	$(INSTALL_PROGRAM) extras/container/check.sh \
+		$(DESTDIR)$(hekdir)/container/check.sh
+	$(INSTALL_PROGRAM) extras/container/heketi \
+		$(DESTDIR)$(hekdir)/container/heketi
 	$(INSTALL_DATA) extras/container/heketi.json \
 		$(DESTDIR)$(hekdir)/container/heketi.json
 
