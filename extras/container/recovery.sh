@@ -250,7 +250,7 @@ recoveryDevice() {
             echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] failed "
             return
         else
-            echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] ok "
+            echo "[recoveryGlusterFS][INFO]recovery VG[$vgNames] ok "
         fi
         #创建lv
         num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$dev\".Bricks" |/host/bin/jq length`
@@ -262,6 +262,7 @@ recoveryDevice() {
             tpName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".LvmThinPool" |sed 's#\"##g'`
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
             sleep 2
+            scanVg
             #检查lv是否创建成功
             cmd="lvs |grep -w brick_$brickId"
             exitCode=`matrixExec "$matrixNodeId" "$cmd"`
