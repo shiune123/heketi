@@ -515,8 +515,8 @@ matrixExec() {
 
 # 添加vg扫描，防止后续卸载时，无法获取vg，导致磁盘没有清空
 scanVg(){
-    for ((i=0;i<${NODESNUM};i++)); do
-          nodeId=`echo ${NODESINFO} |/host/bin/jq -r .[$i].nodeId`
+    for ((k=0;k<${NODESNUM};k++)); do
+          nodeId=`echo ${NODESINFO} |/host/bin/jq -r .[$k].nodeId`
           curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"${nodeId}\",\"command\":\"vgscan --cache \"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd
     done
 }
