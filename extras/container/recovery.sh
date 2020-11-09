@@ -20,7 +20,7 @@ check() {
         for ((l=0;l<${notRecoveryNodeNum};l++)); do
             errorNode=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList[$l].nodeName |sed 's#\"##g'`
             newPod=`/host/bin/kubectl get po -n ${NAMESPACES} -owide --selector="glusterfs-node" |grep glusterfs |grep Running |grep 1/1 |grep -w $errorNode |awk '{print $1}' |grep -v 'NAME'`
-            echo "[recoveryGlusterFS][INFO]not Recovery node:$errorNode"
+            echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) not Recovery node:$errorNode"
             if [ -n "$newPod" ]; then
                 setGFSConfig  $errorNode $newPod
                 recoveryDevice $errorNode $newPod
@@ -82,10 +82,10 @@ check() {
     fi
     if [ -n "$recoveryNodes" ]; then
         recoveryNodesArray=($recoveryNodes)
-        echo "[recoveryGlusterFS][INFO] Recovery $recoveryNodes"
+        echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) Recovery $recoveryNodes"
         #修复节点
         for recoveryNode in ${recoveryNodesArray[@]}; do
-            echo "[recoveryGlusterFS][INFO]Recovering node:$errorGFSNode"
+            echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) Recovering node:$errorGFSNode"
             notRecoveryNodeNum=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
             #防止出现重复的节点名在json文件中
             flags=0
@@ -110,12 +110,12 @@ check() {
         done
         file=`cat /var/lib/heketi/recovery.json |/host/bin/jq .nodeList |/host/bin/jq length`
         if [[ $file -ne 0 ]]; then
-            echo "[recoveryGlusterFS][ERROR] Recovery failed"
+            echo "[recoveryGlusterFS][ERROR] $(date +%Y-%m-%d\ %H:%M:%S) Recovery failed"
         else
-            echo "[recoveryGlusterFS][INFO] Recovery ok"
+            echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) Recovery ok"
         fi
     else
-        echo "[recoveryGlusterFS][INFO]check node ok"
+        echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) check node ok"
     fi
 }
 
@@ -203,10 +203,10 @@ recoveryDevice() {
         fi
     done
     if [ $flag -eq 1 ]; then
-        echo "[recoveryGlusterFS][ERROR]recoveryGFSCluster failed "
+        echo "[recoveryGlusterFS][ERROR] $(date +%Y-%m-%d\ %H:%M:%S) recoveryGFSCluster failed "
         return
     else
-        echo "[recoveryGlusterFS][INFO]recoveryGFSCluster ok "
+        echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) recoveryGFSCluster ok "
     fi
     gfsnodeId=`getErrorNodeId $1`
     devIds=`getErrorDeviceId $gfsnodeId`
@@ -247,10 +247,10 @@ recoveryDevice() {
         scanVg
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
         if [ ! -n "$vgStatus" ]; then
-            echo "[recoveryGlusterFS][ERROR]recovery VG[$vgNames] failed "
+            echo "[recoveryGlusterFS][ERROR] $(date +%Y-%m-%d\ %H:%M:%S) recovery VG[$vgNames] failed "
             return
         else
-            echo "[recoveryGlusterFS][INFO]recovery VG[$vgNames] ok "
+            echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) recovery VG[$vgNames] ok "
         fi
         #创建lv
         num=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".deviceentries.\"$dev\".Bricks" |/host/bin/jq length`
@@ -267,10 +267,10 @@ recoveryDevice() {
             cmd="lvs |grep -w brick_$brickId"
             exitCode=`matrixExec "$matrixNodeId" "$cmd"`
             if [ $exitCode -ne 0 ]; then
-                echo "[recoveryGlusterFS][ERROR] Recovery LV[brick_$brickId] failed"
+                echo "[recoveryGlusterFS][ERROR] $(date +%Y-%m-%d\ %H:%M:%S) Recovery LV[brick_$brickId] failed"
                 return
             else
-                echo "[recoveryGlusterFS][INFO] Recovery LV[brick_$brickId] ok"
+                echo "[recoveryGlusterFS][INFO] $(date +%Y-%m-%d\ %H:%M:%S) Recovery LV[brick_$brickId] ok"
             fi
             #创建glusterfs的brick的文件夹
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- mkdir -p /var/lib/heketi/mounts/$vgName/brick_$brickId
