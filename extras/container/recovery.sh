@@ -243,8 +243,6 @@ recoveryDevice() {
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/bin/udevadm info --query=symlink --name=$devName
         fi
         #判断VG是否创建成功
-        #先扫描vg，防止无法查询到新的vg
-        scanVg
         vgStatus=`/host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- vgs |grep -w $vgNames`
         if [ ! -n "$vgStatus" ]; then
             echo "[recoveryGlusterFS][ERROR] $(date +%Y-%m-%d\ %H:%M:%S) recovery VG[$vgNames] failed "
@@ -262,7 +260,6 @@ recoveryDevice() {
             tpName=`heketi-cli db dump --user admin --secret admin |/host/bin/jq ".brickentries.\"$brickId\".LvmThinPool" |sed 's#\"##g'`
             /host/bin/kubectl exec -i $2 -n ${NAMESPACES} -- /usr/sbin/lvm lvcreate -qq --autobackup=n --poolmetadatasize $poolmetadatasize"K" --chunksize 256K --size $size"K" --thin $vgName/$tpName --virtualsize $size"K" --name brick_$brickId
             sleep 2
-            scanVg
             #检查lv是否创建成功
             cmd="lvs |grep -w brick_$brickId"
             exitCode=`matrixExec "$matrixNodeId" "$cmd"`
@@ -502,7 +499,7 @@ checkVGLost() {
         done
     done
     echo $errorNodeName
-
+        
 }
 
 matrixExec() {
@@ -513,20 +510,8 @@ matrixExec() {
     echo $exitCode
 }
 
-# 添加vg扫描，防止后续卸载时，无法获取vg，导致磁盘没有清空
-scanVg(){
-    for ((k=0;k<${NODESNUM};k++)); do
-          nodeId=`echo ${NODESINFO} |/host/bin/jq -r .[$k].nodeId`
-          curl -X POST -k -H "X-Auth-Token:$TOKEN" -H "Content-Type:application/json" -d "{\"nodeId\":\"${nodeId}\",\"command\":\"vgscan --cache \"}" https://$IN_VIP:$MATRIX_SECURE_PORT/matrix/rsapi/v1.0/exec_cmd
-    done
-}
-
 main() {
     isDeploy=`/host/bin/kubectl get po -n ${NAMESPACES} |awk '{print $1}' |grep deploy-heketi`
-    res=`ps -ef |grep crond`
-    if [ ! -n "$res" ]; then
-                /usr/sbin/crond -i
-    fi
     if [ ! -n "$isDeploy" ]; then
         if [ ! -f "/var/lib/heketi/recovery.json" ]; then
           touch /var/lib/heketi/recovery.json
@@ -537,13 +522,8 @@ main() {
 }
 EOF
         fi
-        scanVg
         while true; do
             sleep 60
-            res=`ps -ef |grep crond`
-            if [ ! -n "$res" ]; then
-                /usr/sbin/crond -i
-            fi
             check
         done
     fi
