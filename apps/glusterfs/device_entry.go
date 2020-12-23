@@ -358,28 +358,18 @@ func (d *DeviceEntry) SpaceNeeded(amount uint64, snapFactor float64) SpaceNeeded
 	// Calculate thinpool size
 	tpsize := uint64(float64(amount) * snapFactor)
 
-	logger.Info("SpaceNeeded++++++++++++++++++++++++++++++++++++tpsize:%v", tpsize)
 	// Align tpsize to extent
 	alignment := tpsize % d.ExtentSize
-	logger.Info("SpaceNeeded++++++++++++++++++++++tpsize+++++++++++++++++++++++alignment:%v", alignment)
 	if alignment != 0 {
 		tpsize += d.ExtentSize - alignment
 	}
-	logger.Info("SpaceNeeded++++++++++++++++++++++++++++++++++++Align tpsize to extent+++++++++tpsize:%v", tpsize)
-	logger.Info("SpaceNeeded++++++++++++++++++++++++++++++++++++Align tpsize to extent+++++++++ExtentSize:%v", d.ExtentSize)
-	logger.Info("SpaceNeeded++++++++++++++++++++++++++++++++++++Align tpsize to extent+++++++++alignment:%v", alignment)
 	// Determine if we need to allocate space for the metadata
 	metadataSize := d.poolMetadataSize(tpsize)
-	logger.Info("SpaceNeeded++++++++++++++++++++++++++++++++++++metadataSize:%v", metadataSize)
 	// Align to extent
 	alignment = metadataSize % d.ExtentSize
-	logger.Info("SpaceNeeded++++++++++++++++++++++++metadataSize+++++++++++++++++++++alignment:%v", alignment)
 	if alignment != 0 {
 		metadataSize += d.ExtentSize - alignment
 	}
-	logger.Info("SpaceNeeded+++++++++++++++++++++++++++++++++++Align to extent+++++++++++++metadataSize:%v", metadataSize)
-	logger.Info("SpaceNeeded+++++++++++++++++++++++++++++++++++Align to extent+++++++++++++ExtentSize:%v", d.ExtentSize)
-	logger.Info("SpaceNeeded+++++++++++++++++++++++++++++++++++Align to extent+++++++++++++alignment:%v", alignment)
 	// Total required size
 	total := tpsize + metadataSize
 	logger.Debug("expected space needed for amount=%v snapFactor=%v : %v",
@@ -395,7 +385,6 @@ func (d *DeviceEntry) poolMetadataSize(tpsize uint64) uint64 {
 	if p > maxPoolMetadataSizeMb {
 		p = maxPoolMetadataSizeMb
 	}
-	logger.Info("poolMetadataSize++++++++++++++++++++++++++++++++++++p:%v", p)
 	return p
 }
 

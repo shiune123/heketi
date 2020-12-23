@@ -41,7 +41,6 @@ func newBrickHostMap(
 		if err != nil {
 			return nil, err
 		}
-		logger.Info("newBrickHostMap++++++++++++++++++++++++++++++++++++++++++++++bmap:%v", bmap[brick])
 	}
 	return bmap, nil
 }
@@ -58,7 +57,6 @@ func (bmap brickHostMap) create(executor executors.Executor) error {
 			defer sg.Done()
 			logger.Info("Creating brick %v", b.Info.Id)
 			_, err := executor.BrickCreate(host, b.createReq())
-			logger.Info("heketi-brick+++++++++++++++++++++++++++++++++++++++++++: %v", b.createReq())
 			sg.Err(err)
 		}(brick, host)
 	}
@@ -118,7 +116,6 @@ func (bmap brickHostMap) destroy(
 // CreateBricks is a deprecated wrapper for creating multiple bricks.
 func CreateBricks(db wdb.RODB, executor executors.Executor, brick_entries []*BrickEntry) error {
 	bmap, err := newBrickHostMap(db, brick_entries)
-	logger.Info("bmap+++++++++++++++++++++++++++++++++++++++++++++++++:%v", bmap)
 	if err != nil {
 		return err
 	}

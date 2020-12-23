@@ -612,7 +612,6 @@ func (v *VolumeEntry) createVolumeExec(db wdb.DB,
 	brick_entries []*BrickEntry) (e error) {
 
 	// Create the bricks on the nodes
-	logger.Info("createVolumeExec+++++++++++++++++++++++++++++++++brick_entries:%v", brick_entries)
 	e = CreateBricks(db, executor, brick_entries)
 	if e != nil {
 		return

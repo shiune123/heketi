@@ -29,8 +29,6 @@ const (
 func (a *App) VolumeCreate(w http.ResponseWriter, r *http.Request) {
 
 	var msg api.VolumeCreateRequest
-	logger.Info("VolumeCreate++++++++++++++++++++++++++++++++++ req:%v", r)
-	logger.Info("VolumeCreate++++++++++++++++++++++++++++++++++ body:%v", r.GetBody)
 	err := utils.GetJsonFromRequest(r, &msg)
 	if err != nil {
 		http.Error(w, "request unable to be parsed", 422)
@@ -136,8 +134,6 @@ func (a *App) VolumeCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vol := NewVolumeEntryFromRequest(&msg)
-	logger.Info("VolumeCreate++++++++++++++++++++++++++++++++++++++++++++++vol:%v", vol)
-	logger.Info("VolumeCreate++++++++++++++++++++++++++++++++++++++++++++++vol:%v", vol.Bricks)
 	if uint64(msg.Size)*GB < vol.Durability.MinVolumeSize() {
 		http.Error(w, fmt.Sprintf("Requested volume size (%v GB) is "+
 			"smaller than the minimum supported volume size (%v)",
